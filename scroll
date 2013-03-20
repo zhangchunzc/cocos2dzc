@@ -1,0 +1,430 @@
+//
+//  GYScrollView.h
+//  testAnim
+//
+//  Created by zhangchun on 13-3-7.
+//
+//
+
+#ifndef __testAnim__GYScrollView__
+#define __testAnim__GYScrollView__
+
+#include <iostream>
+#include "cocos2d.h"
+USING_NS_CC;
+
+
+typedef enum
+{
+  HORIZONTAL = 0x01,
+  VERTAICAL = 0x02,
+    
+}GYScrollState;
+
+
+class GYScrollView:public CCLayer{
+public:
+    ~GYScrollView();
+    GYScrollView(GYScrollState state,CCArray *layer,CCSprite *background,float offset);
+    static GYScrollView* scrollViewWithCCRect(GYScrollState state,CCArray *layers,CCSprite *background,float offset);
+  
+    virtual bool init();
+    void setScrollPosition(CCPoint positon);
+    void updateposition(float dt);//test contentLayer postion
+    //addTargetedDelegate
+    virtual void registerWithTouchDispatcher(void);
+    virtual bool ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent);
+    virtual void ccTouchMoved(CCTouch *pTouch, CCEvent *pEvent);
+    virtual void ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent);
+    virtual void ccTouchCancelled(CCTouch *pTouch, CCEvent *pEvent);
+    void setTouchEnabled(bool e);
+    //clip contentLayer
+    virtual void visit();
+    
+    //add child to contentLayer
+    virtual void addChildInContentLayer(CCNode * child){contentLayer->addChild(child); }
+    virtual void addChildInContentLayer(CCNode * child, int zOrder){contentLayer->addChild(child, zOrder); }
+    virtual void addChildInContentLayer(CCNode * child, int zOrder, int tag){contentLayer->addChild(child, zOrder, tag);}
+    void addLayer(CCNode * addlayer);
+    void upContentLayer(GYScrollState state , CCSize size,  float offset);
+    void removelayer(int index);
+    //set method
+    void setContentLayerColor(const ccColor4B& mColor);
+    void setContentLayerSize(const CCSize& mSize){contentLayer->setContentSize(mSize);}
+    
+    //get method
+    virtual bool getIsTouchInContentLayer(CCTouch *pTouch);
+    const ccColor3B& getContentLayerColor(){return contentLayer->getColor();}
+    const CCSize& getContentLayerSize(){return contentLayer->getContentSize();}
+
+   
+protected:
+    CC_SYNTHESIZE(GYScrollState, m_state, State);
+    CC_SYNTHESIZE(CCLayerColor*, contentLayer, ContentLayer)
+    CC_SYNTHESIZE(bool, isLockHorizontal, IsLockHorizontal)
+    CC_SYNTHESIZE(bool, isLockVertical, IsLockVertical)
+    CC_SYNTHESIZE(bool, isScrolling, IsScrolling)
+    CC_SYNTHESIZE(float, m_LayerCellOffset, LayerCellOffset)
+    CC_SYNTHESIZE(CCArray*, m_pLayers, Pages)
+private:
+    //CCPoint based on world coordinates
+    CCArray *m_pTouchs;
+    CCPoint preTouchPoint;
+    CCPoint currentTouchPoint;
+    CCPoint m_position;
+};
+#endif /* defined(__testAnim__GYScrollView__) */
+
+
+cpp
+
+//
+//  GYScrollView.cpp
+//  testAnim
+//
+//  Created by zhangchun on 13-3-7.
+//
+//
+
+#include "GYScrollView.h"
+#include <assert.h>
+USING_NS_CC;
+#define contentViewFontColorRed  (GLubyte)(255 * 0.8)
+#define contentViewFontColorGreen  (GLubyte)(255 * 0.9)
+#define contentViewFontColorBlue  (GLubyte)(255 * 0.2)
+#define contentViewFontColorAlpha 1.0
+#define kScrollLayerCellPositionY 25
+#define myFontColor ccc3(contentViewFontColorRed, contentViewFontColorGreen, contentViewFontColorBlue)
+
+
+GYScrollView::GYScrollView(GYScrollState state,CCArray *layers,CCSprite *background,float offset)
+:m_LayerCellOffset(0)
+{
+    this->setContentSize(background->getContentSize());
+    this->setTouchEnabled(true);
+    background->setAnchorPoint(CCPointZero);
+    background->setPosition(CCPointZero);
+    addChild(background);
+    m_pTouchs = CCArray::create();
+    m_pTouchs->retain();
+    this->setIsScrolling(false);
+    CC_ASSERT(layers && layers->count());  
+    m_pLayers = CCArray::create();
+    m_pLayers->addObjectsFromArray(layers);
+    m_pLayers->retain();
+    contentLayer = CCLayerColor::create(ccc4(120, 120, 120, 80));
+    contentLayer->ignoreAnchorPointForPosition(false);
+    contentLayer->setAnchorPoint(ccp(0.0f,0.0f));
+    upContentLayer(state,background->getContentSize(),offset);
+    layers->release();
+    schedule(schedule_selector(GYScrollView::updateposition));
+    contentLayer->setPosition(ccp(0,0));
+    this->addChild(contentLayer);
+}
+
+/**init scrollview*/
+void GYScrollView::upContentLayer(GYScrollState state ,CCSize size,float offset)
+{
+    m_state = state;
+    float width = 0;
+    float height = 0;
+    for (int i = 0; i < m_pLayers->count(); i++) {
+        CCNode *layer = dynamic_cast<CCNode*>(m_pLayers->objectAtIndex(i));
+        layer->setAnchorPoint(CCPointZero);
+        CCSize layersize = layer->getContentSize();
+        
+        //横向
+        if(m_state == HORIZONTAL)
+        {
+           if (i > 0)
+            {
+                width = width + layersize.width+offset;
+                m_LayerCellOffset = m_LayerCellOffset+layersize.width+offset;
+                layer->setPosition(ccp(m_LayerCellOffset,0));
+                setContentLayerSize(CCSizeMake(width, size.height));
+            }
+            if (i == 0) {
+                setContentLayerSize(CCSizeMake(layersize.width, size.height));
+                layer->setPosition(ccp(0, 0));
+                width = layersize.width;
+                
+                
+            }
+            
+            
+        }
+        
+        //纵向
+        if(m_state == VERTAICAL)
+        {
+            if (i > 0) {
+                height = height + layersize.height+offset;
+                m_LayerCellOffset = m_LayerCellOffset+layersize.height+offset;
+                layer->setPosition(ccp(0,m_LayerCellOffset));
+                setContentLayerSize(CCSizeMake(size.width , height));
+            }
+            
+            if (i == 0) {
+                setContentLayerSize(CCSizeMake(size.width, layersize.height));
+                layer->setPosition(ccp(0, 0));
+                height = layersize.height;
+
+            }
+            
+            
+        }
+        
+        if (!layer->getParent())
+            contentLayer->addChild(layer);
+        
+    }
+}
+
+/**add a layer into Scrolll*/
+
+void GYScrollView::addLayer(CCNode * addlayer)
+{
+    CC_ASSERT(contentLayer&&addlayer);
+    CCSize preSize = contentLayer->getContentSize();
+    CCSize addSize = addlayer->getContentSize();
+    CCObject* object = NULL;
+    if (m_state == HORIZONTAL) {
+        setContentLayerSize(CCSize(preSize.width+addSize.width+m_LayerCellOffset,preSize.height));
+    }
+    
+    if (m_state == VERTAICAL)
+    {
+         setContentLayerSize(CCSize(preSize.width,preSize.height+addSize.height+m_LayerCellOffset));
+    }
+  
+    
+    contentLayer->setPosition(CCPointZero);
+    addlayer->setPosition(CCPointZero);
+    CCARRAY_FOREACH(m_pLayers, object)
+    {
+        CCNode * layer = (CCNode*)object;
+        CCPoint Prepoint = layer->getPosition();
+        if (m_state == HORIZONTAL) {
+            float x = Prepoint.x + addlayer->getContentSize().width;
+            CCMoveTo * moveto = CCMoveTo::create(0.1f, ccp(x,0));
+            layer->runAction(moveto);
+        }
+        if (m_state == VERTAICAL) {
+            float y = Prepoint.y+addlayer->getContentSize().height;
+            CCMoveTo * moveto = CCMoveTo::create(0.1f, ccp(0,y));
+            layer->runAction(moveto);
+        }
+    }
+    contentLayer->addChild(addlayer);
+    m_pLayers->addObject(addlayer);
+}
+
+/**remove layer*/
+void GYScrollView::removelayer(int index)
+{
+    if (index == m_pLayers->count()) {
+        CCLog("beyond Capacity");
+        return;
+    }
+    CCSize preSize = contentLayer->getContentSize();
+    CCSize removeSize = dynamic_cast<CCNode*>(m_pLayers->objectAtIndex(index))->getContentSize();
+    CCNode * removelayer = dynamic_cast<CCNode*>(m_pLayers->objectAtIndex(index));
+    contentLayer->removeChild(removelayer, false);
+    CCPoint removePoint = removelayer->getPosition();
+    while (index < m_pLayers->count()&& index+1!= m_pLayers->count())
+    {
+       CCPoint prePostion = dynamic_cast<CCNode*>(m_pLayers->objectAtIndex(index))->getPosition();
+       index = index + 1;
+        CCLog("index is %d",index);
+        if (index < m_pLayers->count())
+        {
+            CCNode *layer = dynamic_cast<CCNode*>(m_pLayers->objectAtIndex(index));
+            CCMoveTo * moveto = CCMoveTo::create(0.1f, prePostion);
+            layer->runAction(moveto);
+        }
+    }
+    if (m_state == VERTAICAL) {
+        contentLayer->setContentSize(CCSize(preSize.width, preSize.height-removeSize.height-m_LayerCellOffset));
+    }
+    if (m_state == HORIZONTAL) {
+        contentLayer->setContentSize(CCSize(preSize.width-removeSize.width-m_LayerCellOffset, preSize.height));
+    }
+    m_pLayers->removeObject(removelayer);
+    m_pLayers->createWithCapacity(m_pLayers->count()-1);
+    
+    
+    
+}
+
+/**Create and return a scroll */
+GYScrollView* GYScrollView::scrollViewWithCCRect(GYScrollState state,CCArray *layers,CCSprite *background,float offset){
+    GYScrollView *pScrollView = new GYScrollView(state,layers,background, offset);
+    if(pScrollView && pScrollView->init()){
+        pScrollView->autorelease();
+        return pScrollView;
+    }
+    CC_SAFE_DELETE(pScrollView);
+    return NULL;
+}
+
+/**Create and return a color scroll */
+
+
+GYScrollView::~GYScrollView(){
+    
+    
+}
+
+bool GYScrollView::init(){
+    //TODO
+    return true;
+}
+
+void GYScrollView::registerWithTouchDispatcher(){
+   
+    CCDirector *pDirector = CCDirector::sharedDirector();
+    pDirector->getTouchDispatcher()->addTargetedDelegate(this, 0, true);
+   
+}
+
+void GYScrollView::setTouchEnabled(bool e)
+{
+    CCLayer::setTouchEnabled(e);
+    if (!e)
+    {
+        m_pTouchs->removeAllObjects();
+    }
+}
+
+bool GYScrollView::ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent){
+    
+    //m_pTouchs->removeAllObjects();
+    if (!m_pTouchs->containsObject(pTouch)) {
+        m_pTouchs->addObject(pTouch);
+    }
+    int count = m_pTouchs->count();
+    CCLog("count is %d",count);
+    preTouchPoint = pTouch->getLocation();
+    if (this->getIsTouchInContentLayer(pTouch)) {
+        isScrolling = true;
+        printf("Began Scrolling\n");
+        
+    }
+    else
+        isScrolling = false;
+    return isScrolling;
+}
+
+void GYScrollView::ccTouchMoved(CCTouch *pTouch, CCEvent *pEvent){
+    
+    struct timeval tv;
+    currentTouchPoint = pTouch->getLocation();
+    gettimeofday(&tv, NULL);
+   // CCLog("USec is %f\n",tv.tv_usec);
+    if (m_pTouchs->count() ==1) {
+        CCPoint deltaPoint = ccpSub(currentTouchPoint, preTouchPoint);
+        if(m_state == VERTAICAL)
+            deltaPoint.x=0;
+        if(m_state == HORIZONTAL)
+            deltaPoint.y=0;
+        contentLayer->setPosition(ccpAdd(contentLayer->getPosition(), deltaPoint));
+        preTouchPoint = currentTouchPoint;
+    }
+    if (m_pTouchs->count() ==2) {
+        CCLOG("111111122222222");
+    }
+
+    printf("Moving\n");
+}
+
+void GYScrollView::ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent){
+
+    printf("Moving End\n");
+    float offset = 0.0f;
+    if (m_pTouchs->count()==1) {
+        CCPoint currentPosition = contentLayer->getPosition();
+        CCSize contentSize = contentLayer->getContentSize();
+        //CCSize contentSize = contentLayer->setContentScaleFactor();
+        CCSize scrollSize = getContentSize();
+        if (currentPosition.x > 0 || currentPosition.y > 0) {
+            CCMoveTo *moveto = CCMoveTo::create(0.2f, ccp(0.0f,0.0f));
+            contentLayer->runAction(moveto);
+        }
+        
+        
+        if (contentSize.height > scrollSize.height && currentPosition.y + contentSize.height < scrollSize.height){
+            if (m_state == VERTAICAL) {
+                offset = scrollSize.height - (currentPosition.y+contentSize.height);
+                CCPoint point = ccp(0,offset+currentPosition.y);
+                CCMoveTo *moveto = CCMoveTo::create(0.2f, point);
+                contentLayer->runAction(moveto);
+            }
+        }
+        
+        if (contentSize.width > scrollSize.width && currentPosition.x + contentSize.width < scrollSize.width) {
+            if (m_state == HORIZONTAL) {
+                offset = scrollSize.width - (currentPosition.x+contentSize.width);
+                CCPoint point = ccp(offset+currentPosition.x,0);
+                CCMoveTo *moveto = CCMoveTo::create(0.2f, point);
+                contentLayer->runAction(moveto);
+            }
+        }
+
+    }
+    if (m_pTouchs->count() == 2) {
+        if (m_state == HORIZONTAL) {
+            CCPoint endPoint = pTouch->getLocation();
+            int Direction = endPoint.x- preTouchPoint.x;
+            if (Direction < 0) {
+                CCSize size = dynamic_cast<CCNode*>(m_pLayers->objectAtIndex(0))->getContentSize();
+            }
+        }
+    }
+    m_pTouchs->removeAllObjects();
+    
+}
+
+void GYScrollView::ccTouchCancelled(CCTouch *pTouch, CCEvent *pEvent){
+    m_pTouchs->removeAllObjects();
+}
+
+void GYScrollView::setContentLayerColor(const ccColor4B &mColor){
+    contentLayer->setColor(ccc3(mColor.r, mColor.g, mColor.b));
+    contentLayer->setOpacity(mColor.a);
+}
+
+void GYScrollView::updateposition(float dt)
+{
+//    CCPoint point =  contentLayer->getPosition();
+//    CCLog("X is %f Y is %f",point.x,point.y);
+}
+
+void GYScrollView::setScrollPosition(CCPoint positon)
+{
+    m_position = positon;
+    setPosition(positon);
+}
+
+bool GYScrollView::getIsTouchInContentLayer( CCTouch *pTouch){
+    CCPoint nodeSpaceLocation = this->convertTouchToNodeSpace(pTouch);
+
+    printf("nodeSpaceLocation: %f,%f     ",nodeSpaceLocation.x,nodeSpaceLocation.y);
+    CCRect contentLayerRect = CCRectZero;
+    contentLayerRect.origin = CCPointZero;
+    contentLayerRect.size = contentLayer->getContentSize();
+
+    printf("RectOrigin:%f,%f  RectSize:%f,%f\n",contentLayerRect.origin.x,contentLayerRect.origin.y,contentLayerRect.size.width,contentLayerRect.size.height);
+    return CCRect::CCRectContainsPoint(contentLayerRect, nodeSpaceLocation);
+}
+
+
+void GYScrollView::visit(){
+    CCPoint convertedLocationLowerLeft = this->getPosition();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(convertedLocationLowerLeft.x-m_position.x*0.5, convertedLocationLowerLeft.y-m_position.y,
+              this->getContentSize().width*0.5, this->getContentSize().height*0.5);
+    //CCLog("width is %f",this->getContentSize().width);
+    CCLayer::visit();
+    glDisable(GL_SCISSOR_TEST);
+}
+
